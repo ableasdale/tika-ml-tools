@@ -12,20 +12,20 @@ import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.extractor.EmbeddedDocumentUtil;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.*;
+import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import org.apache.tika.parser.RecursiveParserWrapper;
+import org.apache.tika.parser.html.BoilerpipeContentHandler;
 import org.apache.tika.parser.mbox.OutlookPSTParser;
 import org.apache.tika.parser.microsoft.OutlookExtractor;
-import org.apache.tika.sax.ToXMLContentHandler;
-import org.apache.tika.sax.XHTMLContentHandler;
+import org.apache.tika.sax.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.net.URI;
@@ -54,7 +54,7 @@ public class ParsePSTFolder {
     }
 
     private static void processPSTFile(Path path) {
-        LOG.info("Processing PST File: "+path);
+        LOG.info(String.format("Processing PST File: %s", path));
         TikaInputStream in = null;
         try {
             FileInputStream fis = new FileInputStream(path.toFile());
@@ -157,6 +157,7 @@ public class ParsePSTFolder {
         root.addNamespaceDeclaration("dc", DC_NS);
         root.addNamespaceDeclaration("meta", MS_MAPI_NS);
         root.addNamespaceDeclaration("message", MSG_NS);
+        root.addNamespaceDeclaration("xhtml", "http://www.w3.org/1999/xhtml");
 
         Element meta = new Element("Metadata");
         addNamespacedElement(meta, TikaCoreProperties.IDENTIFIER, pstMail.getInternetMessageId(), DC_NS);
@@ -188,9 +189,61 @@ public class ParsePSTFolder {
         body.appendChild(Base64.getEncoder().encodeToString(pstMail.getBody().getBytes(UTF_8)));
         root.appendChild(body); */
 
+        byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
+
+        try {
+
+//
+//
+//
+//            RecursiveParserWrapper parser = new RecursiveParserWrapper(base,
+//                    new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.BODY, -1));
+//            ctx.set(org.apache.tika.parser.Parser.class, parser);
+//
+//            Metadata metadata = new Metadata();
+//            ContentHandler h = new BodyContentHandler(handler);
+//            base.parse(new ByteArrayInputStream(mailContent), h, metadata, ctx);
+
+            /*
+            ContentHandler h2 = handler;
+            ContentHandler textHandler = new BodyContentHandler(h2);
+*/
+
+
+            //parser.parse(new ByteArrayInputStream(mailContent), new BoilerpipeContentHandler(textHandler), metadata);
+//            parser.reset();
+//            LOG.info(h.toString());
+
+            LOG.info("****************** Start **************");
+            LOG.info(pstMail.getInternetMessageId());
+            Parser p = new AutoDetectParser();
+            ContentHandlerFactory factory = new BasicContentHandlerFactory(
+                    BasicContentHandlerFactory.HANDLER_TYPE.HTML, -1);
+
+            RecursiveParserWrapper wrapper = new RecursiveParserWrapper(p);
+            Metadata metadata = new Metadata();
+            //metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, "test_recursive_embedded.docx");
+            ParseContext context = new ParseContext();
+
+            RecursiveParserWrapperHandler h2 = new RecursiveParserWrapperHandler(factory, -1);
+
+            h2.startEmbeddedDocument(handler, metadata);
+                wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
+                h2.endEmbeddedDocument(handler, metadata);
+            LOG.info("x:"+h2.getMetadataList());
+            LOG.info("****************** END **************");
+
+
+        } catch (TikaException e) {
+            e.printStackTrace();
+        } finally {
+
+        }
+
+
         Element body = new Element("Body");
         // TODO - parse out the XHTML content for this too..
-        body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(pstMail.getBody().getBytes(UTF_8))));
+        body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(mailContent)));
         root.appendChild(body);
 
         Document doc = new Document(root);
