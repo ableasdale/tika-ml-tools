@@ -1,46 +1,70 @@
-import com.pff.*;
+import com.google.common.base.CharMatcher;
+import com.marklogic.xcc.*;
+import com.marklogic.xcc.exceptions.RequestException;
+import com.pff.PSTFile;
+import com.pff.PSTFolder;
+import com.pff.PSTMessage;
+import nu.xom.Document;
+import nu.xom.Element;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.extractor.EmbeddedDocumentUtil;
 import org.apache.tika.io.TikaInputStream;
-import org.apache.tika.metadata.Message;
-import org.apache.tika.metadata.Metadata;
-import org.apache.tika.metadata.Office;
-import org.apache.tika.metadata.TikaCoreProperties;
-import org.apache.tika.mime.MediaType;
+import org.apache.tika.metadata.*;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.mbox.OutlookPSTParser;
 import org.apache.tika.parser.microsoft.OutlookExtractor;
 import org.apache.tika.sax.ToXMLContentHandler;
 import org.apache.tika.sax.XHTMLContentHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.util.Vector;
+import java.lang.invoke.MethodHandles;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.UUID;
 
 import static java.lang.String.valueOf;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class ParsePSTFolder {
-   // MediaType MS_OUTLOOK_PST_MIMETYPE = MediaType.application("vnd.ms-outlook-pst");
-//    Set<MediaType> SUPPORTED_TYPES = singleton(MS_OUTLOOK_PST_MIMETYPE);
+
+    private static String DC_NS = "http://purl.org/dc/elements/1.1/";
+    private static String MS_MAPI_NS = "http://schemas.microsoft.com/mapi";
+    private static String MSG_NS = "URN:IANA:message:rfc822:";
+    private static ContentSource cs;
+    private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
 
     public static void main(String[] args) throws Exception {
+        cs = ContentSourceFactory.newContentSource(new URI("xcc://q:q@localhost:8000/Emails"));
+        // Walk a directory
+        Files.walk(Paths.get("E:\\\\RevisedEDRMv1_Complete"))
+                .filter(Files::isRegularFile)
+                .forEach(path -> processPSTFile(path));
+    }
 
+    private static void processPSTFile(Path path) {
+        TikaInputStream in = null;
+        try {
+            in = TikaInputStream.get(new FileInputStream(path.toFile()));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
         Metadata metadata = new Metadata();
         ContentHandler handler = new ToXMLContentHandler();
-
         ParseContext context = new ParseContext();
-        EmbeddedDocumentExtractor embeddedExtractor = EmbeddedDocumentUtil.getEmbeddedDocumentExtractor(context);
-
-        metadata.set(Metadata.CONTENT_TYPE, OutlookPSTParser.MS_OUTLOOK_PST_MIMETYPE.toString());
-
         //XMLContent
         XHTMLContentHandler xml = new XHTMLContentHandler(handler, metadata);
-        
-        TikaInputStream in = TikaInputStream.get(new FileInputStream("your.pst"));
+        EmbeddedDocumentExtractor embeddedExtractor = EmbeddedDocumentUtil.getEmbeddedDocumentExtractor(context);
+        metadata.set(Metadata.CONTENT_TYPE, OutlookPSTParser.MS_OUTLOOK_PST_MIMETYPE.toString());
+
         PSTFile pstFile = null;
         try {
             pstFile = new PSTFile(in.getFile().getPath());
@@ -48,36 +72,21 @@ public class ParsePSTFolder {
             boolean isValid = pstFile.getFileHandle().getFD().valid();
             metadata.set("isValid", valueOf(isValid));
             if (isValid) {
-                System.out.println(pstFile.getRootFolder().getEmailAddress());
-                System.out.println(pstFile.getRootFolder().getSubFolderCount());
-                System.out.println(pstFile.getRootFolder().getSubFolderCount());
-                System.out.println(pstFile.getRootFolder().getItemsString());
-                System.out.println(pstFile.getRootFolder().getAssociateContentCount());
-                System.out.println(pstFile.getRootFolder().getContentCount());
-
-                Vector<PSTFolder> folders = pstFile.getRootFolder().getSubFolders();
-                for (PSTFolder f : folders){
-                    System.out.println("subfolder");
-                    System.out.println(f.getDisplayName());
-                    System.out.println(f.getEmailAddress());
-                    System.out.println(f.getContentCount());
-                    System.out.println(f.getSubFolderCount());
-                    System.out.println(f.getUnreadCount());
-                    System.out.println(f.getCreationTime());
-                    System.out.println(f.getItemsString());
-                    System.out.println(f.getAssociateContentCount());
-                    System.out.println(f.getContainerClass());
-                }
-               parseFolder(xml, pstFile.getRootFolder(), embeddedExtractor);
+                //Vector<PSTFolder> folders = pstFile.getRootFolder().getSubFolders();
+                parseFolder(xml, pstFile.getRootFolder(), embeddedExtractor);
             }
         } catch (Exception e) {
-            throw new TikaException(e.getMessage(), e);
+            try {
+                throw new TikaException(e.getMessage(), e);
+            } catch (TikaException e1) {
+                e1.printStackTrace();
+            }
         } finally {
             if (pstFile != null && pstFile.getFileHandle() != null) {
                 try {
                     pstFile.getFileHandle().close();
                 } catch (IOException e) {
-                    //swallow closing exception
+                    LOG.error("IO Exception", e);
                 }
             }
         }
@@ -88,61 +97,79 @@ public class ParsePSTFolder {
         if (pstFolder.getContentCount() > 0) {
             PSTMessage pstMail = (PSTMessage) pstFolder.getNextChild();
             while (pstMail != null) {
-
                 final Metadata mailMetadata = new Metadata();
                 //parse attachments first so that stream exceptions
                 //in attachments can make it into mailMetadata.
                 //RecursiveParserWrapper copies the metadata and thereby prevents
                 //modifications to mailMetadata from making it into the
                 //metadata objects cached by the RecursiveParserWrapper
-               //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
+                //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
                 parserMailItem(handler, pstMail, mailMetadata, embeddedExtractor);
-
                 pstMail = (PSTMessage) pstFolder.getNextChild();
             }
         }
-
         if (pstFolder.hasSubfolders()) {
             for (PSTFolder pstSubFolder : pstFolder.getSubFolders()) {
-
                 parseFolder(handler, pstSubFolder, embeddedExtractor);
-
             }
         }
     }
 
     private static void parserMailItem(XHTMLContentHandler handler, PSTMessage pstMail, Metadata mailMetadata,
-                                EmbeddedDocumentExtractor embeddedExtractor) throws SAXException, IOException {
-       // mailMetadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, pstMail.getInternetMessageId());
-       // mailMetadata.set(TikaCoreProperties.EMBEDDED_RELATIONSHIP_ID, pstMail.getInternetMessageId());
-        System.out.println(pstMail.getInternetMessageId() +" | "+ pstMail.getSenderName() +" | "+ pstMail.getSubject()+" | "+ pstMail.getCreationTime());
-        mailMetadata.set(TikaCoreProperties.IDENTIFIER, pstMail.getInternetMessageId());
-        mailMetadata.set(TikaCoreProperties.TITLE, pstMail.getSubject());
-        mailMetadata.set(Metadata.MESSAGE_FROM, pstMail.getSenderName());
-        mailMetadata.set(TikaCoreProperties.CREATOR, pstMail.getSenderName());
-        mailMetadata.set(TikaCoreProperties.CREATED, pstMail.getCreationTime());
-        mailMetadata.set(TikaCoreProperties.MODIFIED, pstMail.getLastModificationTime());
-        mailMetadata.set(TikaCoreProperties.COMMENTS, pstMail.getComment());
-        mailMetadata.set("descriptorNodeId", valueOf(pstMail.getDescriptorNodeId()));
-        mailMetadata.set("senderEmailAddress", pstMail.getSenderEmailAddress());
-        mailMetadata.set("recipients", pstMail.getRecipientsString());
-        mailMetadata.set("displayTo", pstMail.getDisplayTo());
-        mailMetadata.set("displayCC", pstMail.getDisplayCC());
-        mailMetadata.set("displayBCC", pstMail.getDisplayBCC());
-        mailMetadata.set("importance", valueOf(pstMail.getImportance()));
-        mailMetadata.set("priority", valueOf(pstMail.getPriority()));
-        mailMetadata.set("flagged", valueOf(pstMail.isFlagged()));
-        mailMetadata.set(Office.MAPI_MESSAGE_CLASS,
-                OutlookExtractor.getMessageClass(pstMail.getMessageClass()));
+                                       EmbeddedDocumentExtractor embeddedExtractor) throws SAXException, IOException {
 
-        mailMetadata.set(Message.MESSAGE_FROM_EMAIL, pstMail.getSenderEmailAddress());
+        Element root = new Element("Email");
+        root.addNamespaceDeclaration("dc", DC_NS);
+        root.addNamespaceDeclaration("meta", MS_MAPI_NS);
+        root.addNamespaceDeclaration("message", MSG_NS);
 
-        mailMetadata.set(Office.MAPI_FROM_REPRESENTING_EMAIL,
-                pstMail.getSentRepresentingEmailAddress());
+        Element meta = new Element("Metadata");
+        addNamespacedElement(meta, TikaCoreProperties.IDENTIFIER, pstMail.getInternetMessageId(), DC_NS);
+        addNamespacedElement(meta, TikaCoreProperties.TITLE, pstMail.getSubject(), DC_NS);
+        addElement(meta, Metadata.MESSAGE_FROM, pstMail.getSenderName());
+        addNamespacedElement(meta, TikaCoreProperties.CREATOR, pstMail.getSentRepresentingName(), DC_NS);
+        addNamespacedElement(meta, TikaCoreProperties.CREATED, pstMail.getCreationTime().toString(), DC_NS);
+        addNamespacedElement(meta, TikaCoreProperties.MODIFIED, pstMail.getLastModificationTime().toString(), DC_NS);
+        addNamespacedElement(meta, TikaCoreProperties.COMMENTS, pstMail.getComment(), DC_NS);
+        addElement(meta, Metadata.MESSAGE_FROM, pstMail.getSenderName());
+        addElement(meta, "descriptorNodeId", valueOf(pstMail.getDescriptorNodeId()));
+        addElement(meta, "senderEmailAddress", pstMail.getSenderEmailAddress());
+        addElement(meta, "recipients", pstMail.getRecipientsString());
+        addElement(meta, "displayTo", pstMail.getDisplayTo());
+        addElement(meta, "displayCC", pstMail.getDisplayCC());
+        addElement(meta, "displayBCC", pstMail.getDisplayBCC());
+        addElement(meta, "importance", valueOf(pstMail.getImportance()));
+        addElement(meta, "priority", valueOf(pstMail.getPriority()));
+        addElement(meta, "flagged", valueOf(pstMail.isFlagged()));
+        addNamespacedElement(meta, Office.MAPI_MESSAGE_CLASS, OutlookExtractor.getMessageClass(pstMail.getMessageClass()), MS_MAPI_NS);
+        addNamespacedElement(meta, Message.MESSAGE_FROM_EMAIL, pstMail.getSenderEmailAddress(), MSG_NS);
+        addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_EMAIL, pstMail.getSentRepresentingEmailAddress(), MS_MAPI_NS);
+        addNamespacedElement(meta, Message.MESSAGE_FROM_NAME, pstMail.getSenderName(), MSG_NS);
+        addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_NAME, pstMail.getSentRepresentingName(), MS_MAPI_NS);
+        root.appendChild(meta);
 
-        mailMetadata.set(Message.MESSAGE_FROM_NAME, pstMail.getSenderName());
-        mailMetadata.set(Office.MAPI_FROM_REPRESENTING_NAME, pstMail.getSentRepresentingName());
+        /* Add email body as Base64 encoded data
+        Element body = new Element("BodyAsBinary");
+        body.appendChild(Base64.getEncoder().encodeToString(pstMail.getBody().getBytes(UTF_8)));
+        root.appendChild(body); */
 
+        Element body = new Element("Body");
+        body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(pstMail.getBody().getBytes(UTF_8))));
+        root.appendChild(body);
+
+        Document doc = new Document(root);
+
+        Session s = cs.newSession();
+        Content c = ContentFactory.newContent("/" + UUID.randomUUID() + ".xml", doc.toXML(), null);
+        try {
+            s.insertContent(c);
+        } catch (RequestException e) {
+            e.printStackTrace();
+        }
+        s.close();
+        //LOG.debug(doc.toXML());
+
+        /* TODO - adding this would be quite a bit of extra work:
         //add recipient details
         try {
             for (int i = 0; i < pstMail.getNumberOfRecipients(); i++) {
@@ -172,22 +199,33 @@ public class ParsePSTFolder {
                 }
             }
         } catch (PSTException e) {
-            //swallow
-        }
+            LOG.error("PSTException",e);
+        } */
         //we may want to experiment with working with the bodyHTML.
         //However, because we can't get the raw bytes, we _could_ wind up sending
         //a UTF-8 byte representation of the html that has a conflicting metaheader
         //that causes the HTMLParser to get the encoding wrong.  Better if we could get
         //the underlying bytes from the pstMail object...
 
-        byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
 
-       // System.out.println(pstMail.getBody());
-        mailMetadata.set(TikaCoreProperties.CONTENT_TYPE_OVERRIDE, MediaType.TEXT_PLAIN.toString());
+        // System.out.println(pstMail.getBody());
+        //mailMetadata.set(TikaCoreProperties.CONTENT_TYPE_OVERRIDE, MediaType.TEXT_PLAIN.toString());
         //embeddedExtractor.parseEmbedded(new ByteArrayInputStream(mailContent), handler, mailMetadata, true);
     }
 
-    /*
+    private static void addElement(Element root, String elementName, String content) {
+        Element e = new Element(elementName);
+        e.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(content));
+        root.appendChild(e);
+    }
+
+    private static void addNamespacedElement(Element root, Property elementName, String content, String namespaceUri) {
+        Element e = new Element(elementName.getName(), namespaceUri);
+        e.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(content));
+        root.appendChild(e);
+    }
+
+    /* TODO - adding attachments would be quite a bit of extra work
     private static void parseMailAttachments(XHTMLContentHandler xhtml, PSTMessage email,
                                       final Metadata mailMetadata,
                                       EmbeddedDocumentExtractor embeddedExtractor)
