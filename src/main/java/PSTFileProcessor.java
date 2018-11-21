@@ -3,47 +3,62 @@ import com.marklogic.xcc.Content;
 import com.marklogic.xcc.ContentFactory;
 import com.marklogic.xcc.Session;
 import com.marklogic.xcc.exceptions.RequestException;
+import com.pff.PSTException;
+import com.pff.PSTFile;
+import com.pff.PSTFolder;
 import com.pff.PSTMessage;
 import nu.xom.Document;
 import nu.xom.Element;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.tika.exception.TikaException;
+import org.apache.tika.extractor.EmbeddedDocumentExtractor;
+import org.apache.tika.extractor.EmbeddedDocumentUtil;
+import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.*;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.RecursiveParserWrapper;
+import org.apache.tika.parser.mbox.OutlookPSTParser;
 import org.apache.tika.parser.microsoft.OutlookExtractor;
-import org.apache.tika.sax.BasicContentHandlerFactory;
-import org.apache.tika.sax.ContentHandlerFactory;
-import org.apache.tika.sax.RecursiveParserWrapperHandler;
+import org.apache.tika.sax.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
 import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.nio.file.Path;
 
 import static java.lang.String.valueOf;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-public class PSTProcessor implements Runnable {
+public class PSTFileProcessor implements Runnable {
 
     private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
     private static String DC_NS = "http://purl.org/dc/elements/1.1/";
     private static String MS_MAPI_NS = "http://schemas.microsoft.com/mapi";
     private static String MSG_NS = "URN:IANA:message:rfc822:";
 
-    PSTMessage pstMail;
+    Path fileName;
 
-    PSTProcessor(PSTMessage pstMail) {
+    PSTFileProcessor(Path fileName) {
         //LOG.debug(String.format("Working on: %s", uri));
-        this.pstMail = pstMail;
+        this.fileName = fileName;
+        //LOG.info("Processing pstMail" + pstMail.getInternetMessageId());
     }
 
     @Override
     public void run() {
+        processPSTFile(fileName);
+    }
+
+    private static void parserMailItem(XHTMLContentHandler handler, PSTMessage pstMail, Metadata mailMetadata,
+                                       EmbeddedDocumentExtractor embeddedExtractor) throws SAXException, IOException {
         Element root = new Element("Email");
         root.addNamespaceDeclaration("dc", DC_NS);
         root.addNamespaceDeclaration("meta", MS_MAPI_NS);
@@ -131,7 +146,7 @@ public class PSTProcessor implements Runnable {
         Document doc = new Document(root);
 
         // TODO - create a Thread (and pool) to do this work to speed up loading
-        Session s = MarkLogicContentSourceProvider.getInstance().getContentSource().newSession();
+        Session s = MarkLogicContentSourceProvider.getInstance().getContentSource().newSession("Emails");
         String docUri = createDocUriFromId(pstMail.getInternetMessageId());
         Content c = ContentFactory.newContent(docUri, doc.toXML(), null);
 
@@ -203,4 +218,72 @@ public class PSTProcessor implements Runnable {
         e.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(content));
         root.appendChild(e);
     }
+    private static void processPSTFile(Path path) {
+        LOG.info(String.format("Processing PST File: %s", path));
+        TikaInputStream in = null;
+        try {
+            FileInputStream fis = new FileInputStream(path.toFile());
+            in = TikaInputStream.get(fis);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        Metadata metadata = new Metadata();
+        ContentHandler handler = new ToXMLContentHandler();
+        ParseContext context = new ParseContext();
+        //XMLContent
+        XHTMLContentHandler xml = new XHTMLContentHandler(handler, metadata);
+        EmbeddedDocumentExtractor embeddedExtractor = EmbeddedDocumentUtil.getEmbeddedDocumentExtractor(context);
+        metadata.set(Metadata.CONTENT_TYPE, OutlookPSTParser.MS_OUTLOOK_PST_MIMETYPE.toString());
+
+        PSTFile pstFile = null;
+        try {
+            pstFile = new PSTFile(in.getFile().getPath());
+            metadata.set(Metadata.CONTENT_LENGTH, valueOf(pstFile.getFileHandle().length()));
+            boolean isValid = pstFile.getFileHandle().getFD().valid();
+            metadata.set("isValid", valueOf(isValid));
+            if (isValid) {
+                //Vector<PSTFolder> folders = pstFile.getRootFolder().getSubFolders();
+                parseFolder(xml, pstFile.getRootFolder(), embeddedExtractor);
+            }
+        } catch (Exception e) {
+              LOG.error("Exception Caught: ", e);
+        } finally {
+            if (pstFile != null && pstFile.getFileHandle() != null) {
+                try {
+                    pstFile.getFileHandle().close();
+                    //CloseUtils.close(fileStream);
+                    in.close();
+                    in = null;
+                } catch (IOException e) {
+                    LOG.error("IO Exception", e);
+                }
+            }
+        }
+    }
+
+
+    private static void parseFolder(XHTMLContentHandler handler, PSTFolder pstFolder, EmbeddedDocumentExtractor embeddedExtractor)
+            throws Exception {
+        if (pstFolder.getContentCount() > 0) {
+            PSTMessage pstMail = (PSTMessage) pstFolder.getNextChild();
+            while (pstMail != null) {
+                final Metadata mailMetadata = new Metadata();
+                //parse attachments first so that stream exceptions
+                //in attachments can make it into mailMetadata.
+                //RecursiveParserWrapper copies the metadata and thereby prevents
+                //modifications to mailMetadata from making it into the
+                //metadata objects cached by the RecursiveParserWrapper
+                //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
+                //es.submit(new PSTFileProcessor(pstMail));
+                parserMailItem(handler, pstMail, mailMetadata, embeddedExtractor);
+                pstMail = (PSTMessage) pstFolder.getNextChild();
+            }
+        }
+        if (pstFolder.hasSubfolders()) {
+            for (PSTFolder pstSubFolder : pstFolder.getSubFolders()) {
+                parseFolder(handler, pstSubFolder, embeddedExtractor);
+            }
+        }
+    }
+
 }

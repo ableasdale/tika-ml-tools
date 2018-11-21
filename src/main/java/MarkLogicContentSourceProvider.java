@@ -27,7 +27,7 @@ public class MarkLogicContentSourceProvider {
 
     private MarkLogicContentSourceProvider() {
         LOG.info("Creating the MarkLogic ContentSourceFactory provider");
-        String[] hosts = Util.getConfiguration().getStringArray("hosts");
+        String[] hosts = Util.getConfiguration().getStringArray("host");
         try {
             URI uri = new URI(generateXdbcConnectionUri(hosts[0]));
             cs = ContentSourceFactory
