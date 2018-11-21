@@ -1,132 +1,49 @@
 import com.google.common.base.CharMatcher;
-import com.marklogic.xcc.*;
+import com.marklogic.xcc.Content;
+import com.marklogic.xcc.ContentFactory;
+import com.marklogic.xcc.Session;
 import com.marklogic.xcc.exceptions.RequestException;
-import com.pff.PSTFile;
-import com.pff.PSTFolder;
 import com.pff.PSTMessage;
 import nu.xom.Document;
 import nu.xom.Element;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.tika.exception.TikaException;
-import org.apache.tika.extractor.EmbeddedDocumentExtractor;
-import org.apache.tika.extractor.EmbeddedDocumentUtil;
-import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.*;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.apache.tika.parser.RecursiveParserWrapper;
-import org.apache.tika.parser.mbox.OutlookPSTParser;
 import org.apache.tika.parser.microsoft.OutlookExtractor;
-import org.apache.tika.sax.*;
+import org.apache.tika.sax.BasicContentHandlerFactory;
+import org.apache.tika.sax.ContentHandlerFactory;
+import org.apache.tika.sax.RecursiveParserWrapperHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
 import java.io.ByteArrayInputStream;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
-import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 import static java.lang.String.valueOf;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-public class ParsePSTFolder {
+public class PSTProcessor implements Runnable {
 
+    private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
     private static String DC_NS = "http://purl.org/dc/elements/1.1/";
     private static String MS_MAPI_NS = "http://schemas.microsoft.com/mapi";
     private static String MSG_NS = "URN:IANA:message:rfc822:";
-    private static ContentSource cs;
-    private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
 
-    public static void main(String[] args) throws Exception {
-        cs = ContentSourceFactory.newContentSource(new URI("xcc://q:q@localhost:8000/Emails"));
-        // Walk a top level directory
-        Files.walk(Paths.get("E:\\\\RevisedEDRMv1_Complete"))
-                .filter(Files::isRegularFile)
-                .forEach(path -> processPSTFile(path));
+    PSTMessage pstMail;
+
+    PSTProcessor(PSTMessage pstMail) {
+        //LOG.debug(String.format("Working on: %s", uri));
+        this.pstMail = pstMail;
     }
 
-    private static void processPSTFile(Path path) {
-        LOG.info(String.format("Processing PST File: %s", path));
-        TikaInputStream in = null;
-        try {
-            FileInputStream fis = new FileInputStream(path.toFile());
-            in = TikaInputStream.get(fis);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
-        Metadata metadata = new Metadata();
-        ContentHandler handler = new ToXMLContentHandler();
-        ParseContext context = new ParseContext();
-        //XMLContent
-        XHTMLContentHandler xml = new XHTMLContentHandler(handler, metadata);
-        EmbeddedDocumentExtractor embeddedExtractor = EmbeddedDocumentUtil.getEmbeddedDocumentExtractor(context);
-        metadata.set(Metadata.CONTENT_TYPE, OutlookPSTParser.MS_OUTLOOK_PST_MIMETYPE.toString());
-
-        PSTFile pstFile = null;
-        try {
-            pstFile = new PSTFile(in.getFile().getPath());
-            metadata.set(Metadata.CONTENT_LENGTH, valueOf(pstFile.getFileHandle().length()));
-            boolean isValid = pstFile.getFileHandle().getFD().valid();
-            metadata.set("isValid", valueOf(isValid));
-            if (isValid) {
-                //Vector<PSTFolder> folders = pstFile.getRootFolder().getSubFolders();
-                parseFolder(xml, pstFile.getRootFolder(), embeddedExtractor);
-            }
-        } catch (Exception e) {
-            try {
-                throw new TikaException(e.getMessage(), e);
-            } catch (TikaException e1) {
-                e1.printStackTrace();
-            }
-        } finally {
-            if (pstFile != null && pstFile.getFileHandle() != null) {
-                try {
-                    pstFile.getFileHandle().close();
-                    //CloseUtils.close(fileStream);
-                    in.close();
-                    in = null;
-                } catch (IOException e) {
-                    LOG.error("IO Exception", e);
-                }
-            }
-
-        }
-    }
-
-    private static void parseFolder(XHTMLContentHandler handler, PSTFolder pstFolder, EmbeddedDocumentExtractor embeddedExtractor)
-            throws Exception {
-        if (pstFolder.getContentCount() > 0) {
-            PSTMessage pstMail = (PSTMessage) pstFolder.getNextChild();
-            while (pstMail != null) {
-                final Metadata mailMetadata = new Metadata();
-                //parse attachments first so that stream exceptions
-                //in attachments can make it into mailMetadata.
-                //RecursiveParserWrapper copies the metadata and thereby prevents
-                //modifications to mailMetadata from making it into the
-                //metadata objects cached by the RecursiveParserWrapper
-                //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
-                parserMailItem(handler, pstMail, mailMetadata, embeddedExtractor);
-                pstMail = (PSTMessage) pstFolder.getNextChild();
-            }
-        }
-        if (pstFolder.hasSubfolders()) {
-            for (PSTFolder pstSubFolder : pstFolder.getSubFolders()) {
-                parseFolder(handler, pstSubFolder, embeddedExtractor);
-            }
-        }
-    }
-
-    private static void parserMailItem(XHTMLContentHandler handler, PSTMessage pstMail, Metadata mailMetadata,
-                                       EmbeddedDocumentExtractor embeddedExtractor) throws SAXException, IOException {
-
+    @Override
+    public void run() {
         Element root = new Element("Email");
         root.addNamespaceDeclaration("dc", DC_NS);
         root.addNamespaceDeclaration("meta", MS_MAPI_NS);
@@ -173,7 +90,7 @@ public class ParsePSTFolder {
             ContentHandler h2 = handler;
             ContentHandler textHandler = new BodyContentHandler(h2);
 */
-            //parser.parse(new ByteArrayInputStream(mailContent), new BoilerpipeContentHandler(textHandler), metadata);
+        //parser.parse(new ByteArrayInputStream(mailContent), new BoilerpipeContentHandler(textHandler), metadata);
 //            parser.reset();
 //            LOG.info(h.toString());
         byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
@@ -190,7 +107,7 @@ public class ParsePSTFolder {
             ParseContext context = new ParseContext();
             RecursiveParserWrapperHandler h2 = new RecursiveParserWrapperHandler(factory, -1);
             h2.startDocument();
-             wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
+            wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
             h2.endDocument();
 
             String HTMLMessage = h2.getMetadataList().get(0).get("X-TIKA:content");
@@ -199,8 +116,8 @@ public class ParsePSTFolder {
             HTMLbody = new Element("HTMLBody");
             HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(HTMLMessage)));
             LOG.debug("****************** END Parsing Message Body **************");
-        } catch (TikaException e) {
-            LOG.error("TikaException: ",e);
+        } catch (TikaException | SAXException | IOException e) {
+            LOG.error("TikaException / SAXException / IOException: ",e);
         } finally {
             // TODO Does anything need to be closed?
         }
@@ -214,7 +131,7 @@ public class ParsePSTFolder {
         Document doc = new Document(root);
 
         // TODO - create a Thread (and pool) to do this work to speed up loading
-        Session s = cs.newSession();
+        Session s = MarkLogicContentSourceProvider.getInstance().getContentSource().newSession();
         String docUri = createDocUriFromId(pstMail.getInternetMessageId());
         Content c = ContentFactory.newContent(docUri, doc.toXML(), null);
 
@@ -269,7 +186,6 @@ public class ParsePSTFolder {
         //mailMetadata.set(TikaCoreProperties.CONTENT_TYPE_OVERRIDE, MediaType.TEXT_PLAIN.toString());
         //embeddedExtractor.parseEmbedded(new ByteArrayInputStream(mailContent), handler, mailMetadata, true);
     }
-
     private static String createDocUriFromId(String id) {
         id = id.replace("<","");
         id = id.replace(">", "");
@@ -287,65 +203,4 @@ public class ParsePSTFolder {
         e.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(content));
         root.appendChild(e);
     }
-
-    /* TODO - adding attachments would be quite a bit of extra work
-    private static void parseMailAttachments(XHTMLContentHandler xhtml, PSTMessage email,
-                                      final Metadata mailMetadata,
-                                      EmbeddedDocumentExtractor embeddedExtractor)
-            throws TikaException {
-        int numberOfAttachments = email.getNumberOfAttachments();
-        for (int i = 0; i < numberOfAttachments; i++) {
-            try {
-                PSTAttachment attach = email.getAttachment(i);
-
-                // Get the filename; both long and short filenames can be used for attachments
-                String filename = attach.getLongFilename();
-                if (filename.isEmpty()) {
-                    filename = attach.getFilename();
-                }
-
-                xhtml.element("p", filename);
-
-                Metadata attachMeta = new Metadata();
-                //attachMeta.set(TikaCoreProperties.RESOURCE_NAME_KEY, filename);
-                //attachMeta.set(TikaCoreProperties.EMBEDDED_RELATIONSHIP_ID, filename);
-                AttributesImpl attributes = new AttributesImpl();
-                attributes.addAttribute("", "class", "class", "CDATA", "embedded");
-                attributes.addAttribute("", "id", "id", "CDATA", filename);
-                xhtml.startElement("div", attributes);
-                if (embeddedExtractor.shouldParseEmbedded(attachMeta)) {
-                    TikaInputStream tis = null;
-                    try {
-                        tis = TikaInputStream.get(attach.getFileInputStream());
-                    } catch (NullPointerException e) {//TIKA-2488
-                        EmbeddedDocumentUtil.recordEmbeddedStreamException(e, mailMetadata);
-                        continue;
-                    }
-
-                    try {
-                        embeddedExtractor.parseEmbedded(tis, xhtml, attachMeta, true);
-                    } finally {
-
-                        tis.close();
-                    }
-                }
-                xhtml.endElement("div");
-
-            } catch (Exception e) {
-                throw new TikaException("Unable to unpack document stream", e);
-            }
-        }
-    }
-
-
-    private static AttributesImpl createAttribute(String attName, String attValue) {
-        AttributesImpl attributes = new AttributesImpl();
-        attributes.addAttribute("", attName, attName, "CDATA", attValue);
-        return attributes;
-    }
-
-
-    public Set<MediaType> getSupportedTypes(ParseContext context) {
-        return SUPPORTED_TYPES;
-    }*/
 }
