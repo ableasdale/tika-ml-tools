@@ -6,6 +6,7 @@ import com.pff.PSTFolder;
 import com.pff.PSTMessage;
 import nu.xom.Document;
 import nu.xom.Element;
+import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.extractor.EmbeddedDocumentUtil;
@@ -21,10 +22,12 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,9 +54,11 @@ public class ParsePSTFolder {
     }
 
     private static void processPSTFile(Path path) {
+        LOG.info("Processing PST File: "+path);
         TikaInputStream in = null;
         try {
-            in = TikaInputStream.get(new FileInputStream(path.toFile()));
+            FileInputStream fis = new FileInputStream(path.toFile());
+            in = TikaInputStream.get(fis);
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -85,12 +90,42 @@ public class ParsePSTFolder {
             if (pstFile != null && pstFile.getFileHandle() != null) {
                 try {
                     pstFile.getFileHandle().close();
+                    //CloseUtils.close(fileStream);
+                    in.close();
+                    in = null;
                 } catch (IOException e) {
                     LOG.error("IO Exception", e);
                 }
             }
+
         }
     }
+
+    /* I don't think this is necessary
+    public static void cleanUp(PSTFile docIn){
+        try {
+            //The OPCPackage object always refers the temporary
+            //file created by the Apache POI
+            OPCPackage pkg = docIn.getPackage();
+
+            //Apache POI is not providing any getter method for
+            //"oroginalPackagePath" where
+            //it'll store the location of the temporary file
+            //that is generated. So, Using reflection to get
+            // the temporary file name along with its path
+            Field f = OPCPackage.class.getDeclaredField("originalPackagePath");
+            f.setAccessible(true);
+            String path = (String)f.get(pkg);
+
+            //Delete the file
+            File file = new File(path);
+            file.delete();
+
+        } catch (Exception e) {
+            System.out.println("Exception occurred while cleanup");
+        }
+    } */
+
 
     private static void parseFolder(XHTMLContentHandler handler, PSTFolder pstFolder, EmbeddedDocumentExtractor embeddedExtractor)
             throws Exception {
@@ -154,13 +189,17 @@ public class ParsePSTFolder {
         root.appendChild(body); */
 
         Element body = new Element("Body");
+        // TODO - parse out the XHTML content for this too..
         body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(pstMail.getBody().getBytes(UTF_8))));
         root.appendChild(body);
 
         Document doc = new Document(root);
 
+        // TODO - create a Thread (and pool) to do this work to speed up loading
         Session s = cs.newSession();
-        Content c = ContentFactory.newContent("/" + UUID.randomUUID() + ".xml", doc.toXML(), null);
+        String docUri = createDocUriFromId(pstMail.getInternetMessageId());
+        Content c = ContentFactory.newContent(docUri, doc.toXML(), null);
+
         try {
             s.insertContent(c);
         } catch (RequestException e) {
@@ -211,6 +250,12 @@ public class ParsePSTFolder {
         // System.out.println(pstMail.getBody());
         //mailMetadata.set(TikaCoreProperties.CONTENT_TYPE_OVERRIDE, MediaType.TEXT_PLAIN.toString());
         //embeddedExtractor.parseEmbedded(new ByteArrayInputStream(mailContent), handler, mailMetadata, true);
+    }
+
+    private static String createDocUriFromId(String id) {
+        id = id.replace("<","");
+        id = id.replace(">", "");
+        return "/" + CharMatcher.JAVA_ISO_CONTROL.removeFrom(id) + ".xml";
     }
 
     private static void addElement(Element root, String elementName, String content) {
