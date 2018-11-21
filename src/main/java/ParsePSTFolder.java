@@ -6,6 +6,7 @@ import com.pff.PSTFolder;
 import com.pff.PSTMessage;
 import nu.xom.Document;
 import nu.xom.Element;
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
@@ -24,7 +25,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
+import sun.security.provider.MD5;
 
+import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 import java.io.*;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
@@ -32,10 +35,12 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.UUID;
 
 import static java.lang.String.valueOf;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.bouncycastle.crypto.tls.HashAlgorithm.md5;
 
 public class ParsePSTFolder {
 
@@ -182,20 +187,12 @@ public class ParsePSTFolder {
         addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_EMAIL, pstMail.getSentRepresentingEmailAddress(), MS_MAPI_NS);
         addNamespacedElement(meta, Message.MESSAGE_FROM_NAME, pstMail.getSenderName(), MSG_NS);
         addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_NAME, pstMail.getSentRepresentingName(), MS_MAPI_NS);
-        root.appendChild(meta);
 
-        /* Add email body as Base64 encoded data
+        /* TODO? Add email body as Base64 encoded data
         Element body = new Element("BodyAsBinary");
         body.appendChild(Base64.getEncoder().encodeToString(pstMail.getBody().getBytes(UTF_8)));
         root.appendChild(body); */
 
-        byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
-
-        try {
-
-//
-//
-//
 //            RecursiveParserWrapper parser = new RecursiveParserWrapper(base,
 //                    new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.BODY, -1));
 //            ctx.set(org.apache.tika.parser.Parser.class, parser);
@@ -203,48 +200,47 @@ public class ParsePSTFolder {
 //            Metadata metadata = new Metadata();
 //            ContentHandler h = new BodyContentHandler(handler);
 //            base.parse(new ByteArrayInputStream(mailContent), h, metadata, ctx);
-
             /*
             ContentHandler h2 = handler;
             ContentHandler textHandler = new BodyContentHandler(h2);
 */
-
-
             //parser.parse(new ByteArrayInputStream(mailContent), new BoilerpipeContentHandler(textHandler), metadata);
 //            parser.reset();
 //            LOG.info(h.toString());
-
-            LOG.info("****************** Start **************");
-            LOG.info(pstMail.getInternetMessageId());
+        byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
+        Element HTMLbody = null;
+        try {
+            LOG.debug("****************** START Parsing Message Body **************");
+            LOG.debug("ID: "+pstMail.getInternetMessageId());
             Parser p = new AutoDetectParser();
             ContentHandlerFactory factory = new BasicContentHandlerFactory(
-                    BasicContentHandlerFactory.HANDLER_TYPE.HTML, -1);
-
+                    BasicContentHandlerFactory.HANDLER_TYPE.XML, -1);
             RecursiveParserWrapper wrapper = new RecursiveParserWrapper(p);
             Metadata metadata = new Metadata();
             //metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, "test_recursive_embedded.docx");
             ParseContext context = new ParseContext();
-
             RecursiveParserWrapperHandler h2 = new RecursiveParserWrapperHandler(factory, -1);
+            h2.startDocument();
+             wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
+            h2.endDocument();
 
-            h2.startEmbeddedDocument(handler, metadata);
-                wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
-                h2.endEmbeddedDocument(handler, metadata);
-            LOG.info("x:"+h2.getMetadataList());
-            LOG.info("****************** END **************");
+            String HTMLMessage = h2.getMetadataList().get(0).get("X-TIKA:content");
+            addElement(meta, "HTMLContentMD5", DigestUtils.md5Hex(HTMLMessage));
 
-
+            HTMLbody = new Element("HTMLBody");
+            HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(HTMLMessage)));
+            LOG.debug("****************** END Parsing Message Body **************");
         } catch (TikaException e) {
-            e.printStackTrace();
+            LOG.error("TikaException: ",e);
         } finally {
-
+            // TODO Does anything need to be closed?
         }
 
-
+        root.appendChild(meta);
         Element body = new Element("Body");
-        // TODO - parse out the XHTML content for this too..
         body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(mailContent)));
         root.appendChild(body);
+        root.appendChild(HTMLbody);
 
         Document doc = new Document(root);
 
