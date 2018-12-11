@@ -27,9 +27,15 @@ public class MarkLogicContentSourceProvider {
 
     private MarkLogicContentSourceProvider() {
         LOG.info("Creating the MarkLogic ContentSourceFactory provider");
-        String[] hosts = Util.getConfiguration().getStringArray("host");
+        String host = Util.getConfiguration().getString("host");
+        String username = Util.getConfiguration().getString("username");
+        String password = Util.getConfiguration().getString("password");
+        int port = Util.getConfiguration().getInt("port");
+        String contentbase = Util.getConfiguration().getString("contentbase");
+
+
         try {
-            URI uri = new URI(generateXdbcConnectionUri(hosts[0]));
+            URI uri = new URI(generateXdbcConnectionUri(host, username, password, port, contentbase));
             cs = ContentSourceFactory
                     .newContentSource(uri);
         } catch (URISyntaxException e) {
@@ -40,13 +46,13 @@ public class MarkLogicContentSourceProvider {
     }
 
     // TODO - config file for other values!
-    private String generateXdbcConnectionUri(String hostname) {
+    private String generateXdbcConnectionUri(String hostname, String username, String password, int port, String contentbase) {
         StringBuilder sb = new StringBuilder();
-        sb.append("xdbc://").append("q").append(":")
-                .append("q").append("@")
+        sb.append("xdbc://").append(username).append(":")
+                .append(password).append("@")
                 .append(hostname).append(":")
-                .append("8000");
-        //LOG.info("Conn: " + sb.toString());
+                .append(port).append("/").append(contentbase);
+        LOG.debug(String.format("XCC Connection: %s", sb.toString()));
         return sb.toString();
     }
 

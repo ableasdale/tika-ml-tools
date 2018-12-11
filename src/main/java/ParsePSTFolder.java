@@ -4,10 +4,7 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 
 public class ParsePSTFolder {
@@ -15,8 +12,8 @@ public class ParsePSTFolder {
 
     private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
     private static ExecutorService es =
-            new ThreadPoolExecutor(64, 96, 0L, TimeUnit.MILLISECONDS,
-            new LinkedBlockingQueue<Runnable>());
+            new ThreadPoolExecutor(16, 16, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<Runnable>(999999));
 
             //Executors.newFixedThreadPool(5);
 

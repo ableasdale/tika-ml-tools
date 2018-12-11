@@ -1,3 +1,5 @@
+package develop;
+
 import com.pff.PSTException;
 import com.pff.PSTFile;
 import com.pff.PSTFolder;
@@ -9,9 +11,9 @@ import org.commonmark.renderer.html.HtmlRenderer;
 import java.util.Vector;
 
 public class ExampleUsingPFFAndCommonMark {
-    public static void main(String[] args)
-    {
-        new ExampleUsingPFFAndCommonMark("path\\to\\your.pst");
+
+    public static void main(String[] args) {
+        new ExampleUsingPFFAndCommonMark("E:\\RevisedEDRMv1_Complete\\daren_farmer\\daren_farmer_000_1_1.pst");
     }
 
     public ExampleUsingPFFAndCommonMark(String filename) {
@@ -25,9 +27,9 @@ public class ExampleUsingPFFAndCommonMark {
     }
 
     int depth = -1;
+
     public void processFolder(PSTFolder folder)
-            throws PSTException, java.io.IOException
-    {
+            throws PSTException, java.io.IOException {
         depth++;
         // the root folder doesn't have a display name
         if (depth > 0) {
@@ -46,10 +48,10 @@ public class ExampleUsingPFFAndCommonMark {
         // and now the emails for this folder
         if (folder.getContentCount() > 0) {
             depth++;
-            PSTMessage email = (PSTMessage)folder.getNextChild();
+            PSTMessage email = (PSTMessage) folder.getNextChild();
             while (email != null) {
                 printDepth();
-                System.out.println("Email: "+email.getSubject());
+                System.out.println("Email: " + email.getSubject());
                 //System.out.println(email.getBody());
 
                 Parser parser = Parser.builder().build();
@@ -58,7 +60,7 @@ public class ExampleUsingPFFAndCommonMark {
                 System.out.println(renderer.render(document));
 
                 //System.out.println(email.getBodyHTML());
-                email = (PSTMessage)folder.getNextChild();
+                email = (PSTMessage) folder.getNextChild();
             }
             depth--;
         }
@@ -66,7 +68,7 @@ public class ExampleUsingPFFAndCommonMark {
     }
 
     public void printDepth() {
-        for (int x = 0; x < depth-1; x++) {
+        for (int x = 0; x < depth - 1; x++) {
             System.out.print(" | ");
         }
         System.out.print(" |- ");

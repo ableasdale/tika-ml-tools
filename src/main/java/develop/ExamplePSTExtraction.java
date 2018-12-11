@@ -1,3 +1,5 @@
+package develop;
+
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;
 import org.apache.tika.extractor.ParsingEmbeddedDocumentExtractor;
@@ -28,7 +30,7 @@ public class ExamplePSTExtraction {
         context.set(Parser.class, new AutoDetectParser());
 
         try {
-            pstParser.parse(new FileInputStream("path\\to\\your.pst"), handler, metadata, context);
+            pstParser.parse(new FileInputStream("E:\\RevisedEDRMv1_Complete\\andrea_ring\\andrea_ring_000_1_1.pst"), handler, metadata, context);
             //handler.
             String output = handler.toString();
             System.out.println(output);

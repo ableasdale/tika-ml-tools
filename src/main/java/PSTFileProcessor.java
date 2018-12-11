@@ -112,7 +112,7 @@ public class PSTFileProcessor implements Runnable {
         Element HTMLbody = null;
         try {
             LOG.debug("****************** START Parsing Message Body **************");
-            LOG.debug("ID: "+pstMail.getInternetMessageId());
+            LOG.info("MID: "+pstMail.getInternetMessageId());
             Parser p = new AutoDetectParser();
             ContentHandlerFactory factory = new BasicContentHandlerFactory(
                     BasicContentHandlerFactory.HANDLER_TYPE.XML, -1);
