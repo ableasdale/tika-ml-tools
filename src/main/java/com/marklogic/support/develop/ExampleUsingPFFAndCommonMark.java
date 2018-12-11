@@ -1,4 +1,4 @@
-package develop;
+package com.marklogic.support.develop;
 
 import com.pff.PSTException;
 import com.pff.PSTFile;

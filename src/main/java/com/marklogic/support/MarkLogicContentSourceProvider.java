@@ -1,3 +1,5 @@
+package com.marklogic.support;
+
 import java.lang.invoke.MethodHandles;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -45,7 +47,6 @@ public class MarkLogicContentSourceProvider {
         }
     }
 
-    // TODO - config file for other values!
     private String generateXdbcConnectionUri(String hostname, String username, String password, int port, String contentbase) {
         StringBuilder sb = new StringBuilder();
         sb.append("xdbc://").append(username).append(":")

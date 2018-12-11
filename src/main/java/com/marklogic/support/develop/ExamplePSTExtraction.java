@@ -1,4 +1,4 @@
-package develop;
+package com.marklogic.support.develop;
 
 import org.apache.tika.exception.TikaException;
 import org.apache.tika.extractor.EmbeddedDocumentExtractor;

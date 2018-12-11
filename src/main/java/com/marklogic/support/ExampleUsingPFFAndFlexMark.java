@@ -1,3 +1,5 @@
+package com.marklogic.support;
+
 import com.pff.PSTException;
 import com.pff.PSTFile;
 import com.pff.PSTFolder;
@@ -12,13 +14,32 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.util.Vector;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 public class ExampleUsingPFFAndFlexMark {
 
     private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
 
+    private static ExecutorService es =
+            new ThreadPoolExecutor(16, 16, 0L, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<Runnable>(999999));
+
     public static void main(String[] args) {
         new ExampleUsingPFFAndFlexMark(Util.getConfiguration().getString("pstfile"));
+
+        // Stop the thread pool
+        es.shutdown();
+        // Drain the queue
+        while (!es.isTerminated()) {
+            try {
+                es.awaitTermination(72, TimeUnit.HOURS);
+            } catch (InterruptedException e) {
+                LOG.error("Exception caught: ", e);
+            }
+        }
     }
 
     public ExampleUsingPFFAndFlexMark(String filename) {
@@ -54,6 +75,7 @@ public class ExampleUsingPFFAndFlexMark {
             PSTMessage email = (PSTMessage) folder.getNextChild();
             while (email != null) {
                 printDepth();
+                es.submit(new EmailFileProcessor(email));
                 //LOG.info("Subj: "+email.getSubject());
                 //System.out.println(email.getBody());
                 MutableDataSet options = new MutableDataSet();

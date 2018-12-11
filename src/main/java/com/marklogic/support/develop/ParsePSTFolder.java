@@ -1,3 +1,5 @@
+package com.marklogic.support.develop;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,14 +15,14 @@ public class ParsePSTFolder {
     private static Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass().getCanonicalName());
     private static ExecutorService es =
             new ThreadPoolExecutor(16, 16, 0L, TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<Runnable>(999999));
+                    new ArrayBlockingQueue<Runnable>(999999));
 
             //Executors.newFixedThreadPool(5);
 
     public static void main(String[] args) throws Exception {
         //cs = ContentSourceFactory.newContentSource(new URI("xcc://q:q@localhost:8000/Emails"));
         // Walk a top level directory
-        Files.walk(Paths.get("E:\\\\RevisedEDRMv1_Complete"))
+        Files.walk(Paths.get("directory\\here"))
                 .filter(Files::isRegularFile)
                 .forEach(path -> es.submit(new PSTFileProcessor(path)));
 

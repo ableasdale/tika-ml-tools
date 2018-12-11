@@ -1,9 +1,11 @@
+package com.marklogic.support.develop;
+
 import com.google.common.base.CharMatcher;
+import com.marklogic.support.MarkLogicContentSourceProvider;
 import com.marklogic.xcc.Content;
 import com.marklogic.xcc.ContentFactory;
 import com.marklogic.xcc.Session;
 import com.marklogic.xcc.exceptions.RequestException;
-import com.pff.PSTException;
 import com.pff.PSTFile;
 import com.pff.PSTFolder;
 import com.pff.PSTMessage;
@@ -274,7 +276,7 @@ public class PSTFileProcessor implements Runnable {
                 //modifications to mailMetadata from making it into the
                 //metadata objects cached by the RecursiveParserWrapper
                 //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
-                //es.submit(new PSTFileProcessor(pstMail));
+                //es.submit(new com.marklogic.support.develop.PSTFileProcessor(pstMail));
                 parserMailItem(handler, pstMail, mailMetadata, embeddedExtractor);
                 pstMail = (PSTMessage) pstFolder.getNextChild();
             }
