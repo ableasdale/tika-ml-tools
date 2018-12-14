@@ -5,7 +5,6 @@ import com.marklogic.xcc.Content;
 import com.marklogic.xcc.ContentFactory;
 import com.marklogic.xcc.Session;
 import com.marklogic.xcc.exceptions.RequestException;
-import com.pff.PSTException;
 import com.pff.PSTMessage;
 import com.vladsch.flexmark.ast.Node;
 import com.vladsch.flexmark.html.HtmlRenderer;
@@ -21,7 +20,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.invoke.MethodHandles;
 
 import static java.lang.String.valueOf;
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class EmailFileProcessor implements Runnable {
 
@@ -47,9 +45,11 @@ public class EmailFileProcessor implements Runnable {
 
     private static void processEmail(PSTMessage pstMail, String body, String folderName) {
         Element root = new Element("Email");
+        root.addNamespaceDeclaration("w", DC_NS);
         root.addNamespaceDeclaration("dc", DC_NS);
+        root.addNamespaceDeclaration("dcterms", DC_NS);
         root.addNamespaceDeclaration("meta", MS_MAPI_NS);
-        root.addNamespaceDeclaration("message", MSG_NS);
+        root.addNamespaceDeclaration("Message", MSG_NS);
         root.addNamespaceDeclaration("xhtml", "http://www.w3.org/1999/xhtml");
 
         Element meta = new Element("Metadata");
@@ -77,35 +77,15 @@ public class EmailFileProcessor implements Runnable {
         addNamespacedElement(meta, Message.MESSAGE_FROM_NAME, pstMail.getSenderName(), MSG_NS);
         addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_NAME, pstMail.getSentRepresentingName(), MS_MAPI_NS);
 
-/* TODO - is this killing us?
+        // Parse the text body as HTML
         MutableDataSet options = new MutableDataSet();
         com.vladsch.flexmark.parser.Parser parser = Parser.builder(options).build();
-        Node document = parser.parse(pstMail.getBody());
+        Node document = parser.parse(body);
         HtmlRenderer renderer = HtmlRenderer.builder(options).build();
-
-
         Element HTMLbody = new Element("HTMLBody");
-        HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(renderer.render(document))); */
+        HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(renderer.render(document)));
 
-
-        try {
-            //String s = pstMail.getBodyHTML();
-            // String t = pstMail.getBodyPrefix();
-            // LOG.info("type:"+pstMail.getNativeBodyType());
-            // LOG.info("size "+pstMail.getMessageSize());
-            // LOG.info("class "+pstMail.getMessageClass());
-            // LOG.info(t);
-            //String u = pstMail.getBody();
-            //LOG.info("body?"+u.length());
-            //LOG.info(pstMail.getBody());
-            /*if(pstMail.getBody() != null) {
-                byte[] mailContent = pstMail.getBody().getBytes();
-            }*/
-        } catch (Exception e) {
-            LOG.info("No mail content", e);
-        }
-
-        /* TODO? Add email body as Base64 encoded data
+        /* TODO? Add email body as Base64 encoded data?
 
         Element HTMLbody = null;
         addElement(meta, "HTMLContentMD5", DigestUtils.md5Hex(HTMLMessage));
@@ -115,7 +95,7 @@ public class EmailFileProcessor implements Runnable {
         Element ebody = new Element("Body");
         ebody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(body));
         root.appendChild(ebody);
-        //root.appendChild(HTMLbody);
+        root.appendChild(HTMLbody);
 
         Document doc = new Document(root);
 
@@ -192,78 +172,4 @@ public class EmailFileProcessor implements Runnable {
         e.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(content));
         root.appendChild(e);
     }
-
-
-
-
-/*
-    private static void processPSTFile(Path path) {
-        LOG.info(String.format("Processing PST File: %s", path));
-        TikaInputStream in = null;
-        try {
-            FileInputStream fis = new FileInputStream(path.toFile());
-            in = TikaInputStream.get(fis);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
-        Metadata metadata = new Metadata();
-        ContentHandler handler = new ToXMLContentHandler();
-        ParseContext context = new ParseContext();
-        //XMLContent
-        XHTMLContentHandler xml = new XHTMLContentHandler(handler, metadata);
-        EmbeddedDocumentExtractor embeddedExtractor = EmbeddedDocumentUtil.getEmbeddedDocumentExtractor(context);
-        metadata.set(Metadata.CONTENT_TYPE, OutlookPSTParser.MS_OUTLOOK_PST_MIMETYPE.toString());
-
-        PSTFile pstFile = null;
-        try {
-            pstFile = new PSTFile(in.getFile().getPath());
-            metadata.set(Metadata.CONTENT_LENGTH, valueOf(pstFile.getFileHandle().length()));
-            boolean isValid = pstFile.getFileHandle().getFD().valid();
-            metadata.set("isValid", valueOf(isValid));
-            if (isValid) {
-                //Vector<PSTFolder> folders = pstFile.getRootFolder().getSubFolders();
-                parseFolder(xml, pstFile.getRootFolder(), embeddedExtractor);
-            }
-        } catch (Exception e) {
-            LOG.error("Exception Caught: ", e);
-        } finally {
-            if (pstFile != null && pstFile.getFileHandle() != null) {
-                try {
-                    pstFile.getFileHandle().close();
-                    //CloseUtils.close(fileStream);
-                    in.close();
-                    in = null;
-                } catch (IOException e) {
-                    LOG.error("IO Exception", e);
-                }
-            }
-        }
-    } */
-
-
-    /*
-    private static void parseFolder(XHTMLContentHandler handler, PSTFolder pstFolder, EmbeddedDocumentExtractor embeddedExtractor)
-            throws Exception {
-        if (pstFolder.getContentCount() > 0) {
-            PSTMessage pstMail = (PSTMessage) pstFolder.getNextChild();
-            while (pstMail != null) {
-                final Metadata mailMetadata = new Metadata();
-                //parse attachments first so that stream exceptions
-                //in attachments can make it into mailMetadata.
-                //RecursiveParserWrapper copies the metadata and thereby prevents
-                //modifications to mailMetadata from making it into the
-                //metadata objects cached by the RecursiveParserWrapper
-                //parseMailAttachments(handler, pstMail, mailMetadata, embeddedExtractor);
-                //es.submit(new com.marklogic.support.develop.PSTFileProcessor(pstMail));
-                parserMailItem(handler, pstMail, mailMetadata, embeddedExtractor);
-                pstMail = (PSTMessage) pstFolder.getNextChild();
-            }
-        }
-        if (pstFolder.hasSubfolders()) {
-            for (PSTFolder pstSubFolder : pstFolder.getSubFolders()) {
-                parseFolder(handler, pstSubFolder, embeddedExtractor);
-            }
-        }
-    }*/
-
 }
