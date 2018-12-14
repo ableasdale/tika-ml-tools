@@ -77,7 +77,7 @@ public class ExampleUsingPFFAndFlexMark {
             PSTMessage email = null;
             email = processPstMessage(folder, email);
             while (email != null) {
-                // TODO - pass in foldername and depth?
+                // TODO - pass in depth / full folder heirarchy / path?
                 email = processPstMessage(folder, email);
             }
             depth--;
@@ -89,12 +89,7 @@ public class ExampleUsingPFFAndFlexMark {
         try {
             email = (PSTMessage) folder.getNextChild();
             if (email != null) {
-                //LOG.info(email.toString());
-
-                //Map<String, String> msg = readAMsg(email);
-                //LOG.info(msg.get("Content"));
                 String body = email.getBody();
-                //LOG.info("Cotnentlength:" + body.length());
                 es.submit(new EmailFileProcessor(email, body, folder.getDisplayName()));
             }
         } catch (PSTException e) {
@@ -109,6 +104,4 @@ public class ExampleUsingPFFAndFlexMark {
         }
         System.out.print(" |- ");
     }
-
-
 }
