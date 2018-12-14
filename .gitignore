@@ -1,5 +1,5 @@
-build
 out
 .gradle
 .idea
 src/main/resources/config.properties
+build
