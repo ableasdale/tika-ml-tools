@@ -5,24 +5,19 @@ import com.marklogic.xcc.Content;
 import com.marklogic.xcc.ContentFactory;
 import com.marklogic.xcc.Session;
 import com.marklogic.xcc.exceptions.RequestException;
+import com.pff.PSTException;
 import com.pff.PSTMessage;
+import com.vladsch.flexmark.ast.Node;
+import com.vladsch.flexmark.html.HtmlRenderer;
+import com.vladsch.flexmark.parser.Parser;
+import com.vladsch.flexmark.util.options.MutableDataSet;
 import nu.xom.Document;
 import nu.xom.Element;
-import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.*;
-import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.parser.Parser;
-import org.apache.tika.parser.RecursiveParserWrapper;
 import org.apache.tika.parser.microsoft.OutlookExtractor;
-import org.apache.tika.sax.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xml.sax.SAXException;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 
 import static java.lang.String.valueOf;
@@ -79,74 +74,61 @@ public class EmailFileProcessor implements Runnable {
         addNamespacedElement(meta, Message.MESSAGE_FROM_NAME, pstMail.getSenderName(), MSG_NS);
         addNamespacedElement(meta, Office.MAPI_FROM_REPRESENTING_NAME, pstMail.getSentRepresentingName(), MS_MAPI_NS);
 
-        /* TODO? Add email body as Base64 encoded data
-        Element body = new Element("BodyAsBinary");
-        body.appendChild(Base64.getEncoder().encodeToString(pstMail.getBody().getBytes(UTF_8)));
-        root.appendChild(body); */
+/* TODO - is this killing us?
+        MutableDataSet options = new MutableDataSet();
+        com.vladsch.flexmark.parser.Parser parser = Parser.builder(options).build();
+        Node document = parser.parse(pstMail.getBody());
+        HtmlRenderer renderer = HtmlRenderer.builder(options).build();
 
-//            RecursiveParserWrapper parser = new RecursiveParserWrapper(base,
-//                    new BasicContentHandlerFactory(BasicContentHandlerFactory.HANDLER_TYPE.BODY, -1));
-//            ctx.set(org.apache.tika.parser.Parser.class, parser);
-//
-//            Metadata metadata = new Metadata();
-//            ContentHandler h = new BodyContentHandler(handler);
-//            base.parse(new ByteArrayInputStream(mailContent), h, metadata, ctx);
-            /*
-            ContentHandler h2 = handler;
-            ContentHandler textHandler = new BodyContentHandler(h2);
-*/
-        //parser.parse(new ByteArrayInputStream(mailContent), new BoilerpipeContentHandler(textHandler), metadata);
-//            parser.reset();
-//            LOG.info(h.toString());
-        byte[] mailContent = pstMail.getBody().getBytes(UTF_8);
-        Element HTMLbody = null;
+
+        Element HTMLbody = new Element("HTMLBody");
+        HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(renderer.render(document))); */
+
+
         try {
-            LOG.debug("****************** START Parsing Message Body **************");
-            LOG.info("MID: "+pstMail.getInternetMessageId());
-            Parser p = new AutoDetectParser();
-            ContentHandlerFactory factory = new BasicContentHandlerFactory(
-                    BasicContentHandlerFactory.HANDLER_TYPE.XML, -1);
-            RecursiveParserWrapper wrapper = new RecursiveParserWrapper(p);
-            Metadata metadata = new Metadata();
-            //metadata.set(TikaCoreProperties.RESOURCE_NAME_KEY, "test_recursive_embedded.docx");
-            ParseContext context = new ParseContext();
-            RecursiveParserWrapperHandler h2 = new RecursiveParserWrapperHandler(factory, -1);
-            h2.startDocument();
-            wrapper.parse(new ByteArrayInputStream(mailContent), h2, metadata, context);
-            h2.endDocument();
-
-            String HTMLMessage = h2.getMetadataList().get(0).get("X-TIKA:content");
-            addElement(meta, "HTMLContentMD5", DigestUtils.md5Hex(HTMLMessage));
-
-            HTMLbody = new Element("HTMLBody");
-            HTMLbody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(HTMLMessage)));
-            LOG.debug("****************** END Parsing Message Body **************");
-        } catch (TikaException | SAXException | IOException e) {
-            LOG.error("TikaException / SAXException / IOException: ",e);
-        } finally {
-            // TODO Does anything need to be closed?
+            //String s = pstMail.getBodyHTML();
+           // String t = pstMail.getBodyPrefix();
+           // LOG.info("type:"+pstMail.getNativeBodyType());
+           // LOG.info("size "+pstMail.getMessageSize());
+           // LOG.info("class "+pstMail.getMessageClass());
+            // LOG.info(t);
+            //String u = pstMail.getBody();
+            //LOG.info("body?"+u.length());
+            //LOG.info(pstMail.getBody());
+            /*if(pstMail.getBody() != null) {
+                byte[] mailContent = pstMail.getBody().getBytes();
+            }*/
+        } catch (Exception e) {
+            LOG.info("No mail content",e);
         }
 
+        /* TODO? Add email body as Base64 encoded data
+
+        Element HTMLbody = null;
+        addElement(meta, "HTMLContentMD5", DigestUtils.md5Hex(HTMLMessage));
+        */
+
+
+
         root.appendChild(meta);
-        Element body = new Element("Body");
-        body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(mailContent)));
-        root.appendChild(body);
-        root.appendChild(HTMLbody);
+       // Element body = new Element("Body");
+       // body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(mailContent)));
+       // root.appendChild(body);
+        //root.appendChild(HTMLbody);
 
         Document doc = new Document(root);
 
-        // TODO - create a Thread (and pool) to do this work to speed up loading
-        Session s = MarkLogicContentSourceProvider.getInstance().getContentSource().newSession("Emails");
+        Session s = MarkLogicContentSourceProvider.getInstance().getContentSource().newSession();
         String docUri = createDocUriFromId(pstMail.getInternetMessageId());
         Content c = ContentFactory.newContent(docUri, doc.toXML(), null);
 
         try {
             s.insertContent(c);
         } catch (RequestException e) {
-            e.printStackTrace();
+            LOG.error("MarkLogic Request Exception encountered",e);
         }
         s.close();
-        //LOG.debug(doc.toXML());
+
 
         /* TODO - adding this would be quite a bit of extra work:
         //add recipient details
