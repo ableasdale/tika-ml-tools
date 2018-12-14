@@ -30,20 +30,22 @@ public class EmailFileProcessor implements Runnable {
     private static String MS_MAPI_NS = "http://schemas.microsoft.com/mapi";
     private static String MSG_NS = "URN:IANA:message:rfc822:";
 
-    PSTMessage email;
+    private PSTMessage email;
+    private String body;
+    private String folderName;
 
-    EmailFileProcessor(PSTMessage email) {
-        //LOG.debug(String.format("Working on: %s", uri));
+    EmailFileProcessor(PSTMessage email, String body, String folderName) {
         this.email = email;
-        //LOG.info("Processing pstMail" + pstMail.getInternetMessageId());
+        this.body = body;
+        this.folderName = folderName;
     }
 
     @Override
     public void run() {
-        processEmail(email);
+        processEmail(email, body, folderName);
     }
 
-    private static void processEmail(PSTMessage pstMail) {
+    private static void processEmail(PSTMessage pstMail, String body, String folderName) {
         Element root = new Element("Email");
         root.addNamespaceDeclaration("dc", DC_NS);
         root.addNamespaceDeclaration("meta", MS_MAPI_NS);
@@ -59,6 +61,7 @@ public class EmailFileProcessor implements Runnable {
         addNamespacedElement(meta, TikaCoreProperties.MODIFIED, pstMail.getLastModificationTime().toString(), DC_NS);
         addNamespacedElement(meta, TikaCoreProperties.COMMENTS, pstMail.getComment(), DC_NS);
         addElement(meta, Metadata.MESSAGE_FROM, pstMail.getSenderName());
+        addElement(meta, "folder", folderName);
         addElement(meta, "descriptorNodeId", valueOf(pstMail.getDescriptorNodeId()));
         addElement(meta, "senderEmailAddress", pstMail.getSenderEmailAddress());
         addElement(meta, "recipients", pstMail.getRecipientsString());
@@ -87,10 +90,10 @@ public class EmailFileProcessor implements Runnable {
 
         try {
             //String s = pstMail.getBodyHTML();
-           // String t = pstMail.getBodyPrefix();
-           // LOG.info("type:"+pstMail.getNativeBodyType());
-           // LOG.info("size "+pstMail.getMessageSize());
-           // LOG.info("class "+pstMail.getMessageClass());
+            // String t = pstMail.getBodyPrefix();
+            // LOG.info("type:"+pstMail.getNativeBodyType());
+            // LOG.info("size "+pstMail.getMessageSize());
+            // LOG.info("class "+pstMail.getMessageClass());
             // LOG.info(t);
             //String u = pstMail.getBody();
             //LOG.info("body?"+u.length());
@@ -99,7 +102,7 @@ public class EmailFileProcessor implements Runnable {
                 byte[] mailContent = pstMail.getBody().getBytes();
             }*/
         } catch (Exception e) {
-            LOG.info("No mail content",e);
+            LOG.info("No mail content", e);
         }
 
         /* TODO? Add email body as Base64 encoded data
@@ -108,12 +111,10 @@ public class EmailFileProcessor implements Runnable {
         addElement(meta, "HTMLContentMD5", DigestUtils.md5Hex(HTMLMessage));
         */
 
-
-
         root.appendChild(meta);
-       // Element body = new Element("Body");
-       // body.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(new String(mailContent)));
-       // root.appendChild(body);
+        Element ebody = new Element("Body");
+        ebody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(body));
+        root.appendChild(body);
         //root.appendChild(HTMLbody);
 
         Document doc = new Document(root);
@@ -125,7 +126,7 @@ public class EmailFileProcessor implements Runnable {
         try {
             s.insertContent(c);
         } catch (RequestException e) {
-            LOG.error("MarkLogic Request Exception encountered",e);
+            LOG.error("MarkLogic Request Exception encountered", e);
         }
         s.close();
 
@@ -173,8 +174,9 @@ public class EmailFileProcessor implements Runnable {
         //mailMetadata.set(TikaCoreProperties.CONTENT_TYPE_OVERRIDE, MediaType.TEXT_PLAIN.toString());
         //embeddedExtractor.parseEmbedded(new ByteArrayInputStream(mailContent), handler, mailMetadata, true);
     }
+
     private static String createDocUriFromId(String id) {
-        id = id.replace("<","");
+        id = id.replace("<", "");
         id = id.replace(">", "");
         return "/" + CharMatcher.JAVA_ISO_CONTROL.removeFrom(id) + ".xml";
     }

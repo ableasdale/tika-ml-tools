@@ -28,7 +28,7 @@ public class MarkLogicContentSourceProvider {
     private ContentSource cs;
 
     private MarkLogicContentSourceProvider() {
-        LOG.info("Creating the MarkLogic ContentSourceFactory provider");
+        LOG.debug("Creating the MarkLogic ContentSourceFactory provider");
         String host = Util.getConfiguration().getString("host");
         String username = Util.getConfiguration().getString("username");
         String password = Util.getConfiguration().getString("password");

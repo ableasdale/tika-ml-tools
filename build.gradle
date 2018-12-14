@@ -23,5 +23,4 @@ dependencies {
     compile group: 'com.pff', name: 'java-libpst', version: '0.9.3'
     compile group: 'com.atlassian.commonmark',  name: 'commonmark', version: '0.12.1'
     compile group: 'com.vladsch.flexmark',  name: 'flexmark-all', version: '0.34.58'
-    //testCompile group: 'org.slf4j', name: 'slf4j-simple', version: '1.7.25'
 }
