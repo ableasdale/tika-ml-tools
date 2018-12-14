@@ -114,7 +114,7 @@ public class EmailFileProcessor implements Runnable {
         root.appendChild(meta);
         Element ebody = new Element("Body");
         ebody.appendChild(CharMatcher.JAVA_ISO_CONTROL.removeFrom(body));
-        root.appendChild(body);
+        root.appendChild(ebody);
         //root.appendChild(HTMLbody);
 
         Document doc = new Document(root);
